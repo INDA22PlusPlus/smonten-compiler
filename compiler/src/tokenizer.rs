@@ -27,6 +27,7 @@ impl Tokenizer {
     }
 
 
+
     fn next(&mut self) {
         self.check_comment();
         if self.code.len() > 0 {

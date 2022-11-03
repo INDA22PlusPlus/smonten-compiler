@@ -16,28 +16,32 @@ impl Parser {
         }
     }
     pub fn parse(&mut self) -> Result<ASTnode, String>{
-        Ok(self.parse_statements(self.token_vec.clone()))
+        let mut st = SymbolTracker::new();
+        let root: ASTnode;
+        (root, st) = self.parse_statements(self.token_vec.clone(), st);
+        Ok(root)
     }
 
-    pub fn parse_statements(&mut self, mut token_vec: TokenVec) -> ASTnode{
+    pub fn parse_statements(&mut self, mut token_vec: TokenVec, mut st: SymbolTracker) -> (ASTnode, SymbolTracker) {
         let mut seq_vec = vec![];
         let mut seq: ASTnode;
+        
         while !token_vec.is_empty() {
             match token_vec.peek().token_type {
                 TokenType::Emojis(_) => {
-                    (seq, token_vec) = self.parse_assignment(token_vec);
+                    (seq, token_vec, st) = self.parse_assignment(token_vec, st);
                     seq_vec.push(seq);
                 },
                 TokenType::IfKeyword => {
-                    (seq, token_vec) = self.parse_if(token_vec);
+                    (seq, token_vec, st) = self.parse_if(token_vec, st);
                     seq_vec.push(seq);
                 },
                 TokenType::PrintKeyword => {
-                    (seq, token_vec) = self.parse_print(token_vec);
+                    (seq, token_vec, st) = self.parse_print(token_vec, st);
                     seq_vec.push(seq);
                 },
                 TokenType::LoopKeyword => {
-                    (seq, token_vec) = self.parse_loop(token_vec);
+                    (seq, token_vec, st) = self.parse_loop(token_vec, st);
                     seq_vec.push(seq);
                 },
                 TokenType::BreakKeyword => {
@@ -47,12 +51,17 @@ impl Parser {
                 _ => panic!("arm not complete")
             }
         }
-        ASTnode::StatementSeq(seq_vec)
+        return (
+            ASTnode::StatementSeq(seq_vec),
+            st
+        );
     }
 
-    fn parse_assignment(&mut self, mut token_vec: TokenVec) -> (ASTnode, TokenVec) {
+    fn parse_assignment(&mut self, mut token_vec: TokenVec, mut st: SymbolTracker) -> (ASTnode, TokenVec, SymbolTracker) {
 
         let mut c: Vec<ASTnode> = vec![];
+        let new_symbol_to_store = token_vec.peek(); // SAVE THE NEW SYMBOL, BUT STORE IT AFTER CHECKING THE EXPRESSION
+        
         c.push(ASTnode::new_empty_node(token_vec.get_next()));
         let mut cur_node = ASTtoken::new(token_vec.get_next());
         
@@ -61,26 +70,39 @@ impl Parser {
             expr_vec.push(token_vec.get_next())
         }
         token_vec.next(); // remov EOL token
-        let ast_node = self.parse_expression(expr_vec);
+        let ast_node = self.parse_expression(expr_vec, st.clone());
         c.push(ast_node);
         
         cur_node.children = Some(c);
-    
-        return (ASTnode::Node(cur_node), token_vec);
+        
+
+        st.insert(new_symbol_to_store); // INSERT THE NEW SYMBOL
+
+        return (ASTnode::Node(cur_node), token_vec, st); // DO NOT NEED TO RETURN SB
     }
 
-    fn parse_expression(&mut self, token_vec: Vec<Token>) -> ASTnode {
+    fn parse_expression(&mut self, token_vec: Vec<Token>, st: SymbolTracker) -> ASTnode {
 
 
         let length = token_vec.len();
         // EXIT RECURSION
         if length == 1 {
-            return ASTnode::new_empty_node(token_vec[0].clone())
+            let cur_token = token_vec[0].clone();
+            match cur_token.token_type {
+                TokenType::Emojis(_) => {
+                    match st.check(cur_token.clone()) {
+                        Ok(_) => (),
+                        Err(e) => panic!("{}", e)
+                    }
+                },
+                _ => ()
+            }
+            return ASTnode::new_empty_node(cur_token);
         
         }
         // HANDLE PARENS
         else if self.redundant_parens_wrapping(token_vec.clone()) {
-            return self.parse_expression(token_vec[1..length-1].to_vec());
+            return self.parse_expression(token_vec[1..length-1].to_vec(), st);
         }
         // SPLIT AT PLUS/MINUS IF EXISTS
         else if let Some(i) = self.get_idx_of(token_vec.clone(), true) {
@@ -89,7 +111,8 @@ impl Parser {
                 let mut this_token = ASTtoken::new(token_vec[0].clone());
                 this_token.children = Some(vec![
                     self.parse_expression(
-                        token_vec[1..].to_vec()
+                        token_vec[1..].to_vec(),
+                        st
                     )
                 ]);
                 return ASTnode::Node(this_token);
@@ -97,10 +120,12 @@ impl Parser {
                 let mut this_token = ASTtoken::new(token_vec[i].clone());
                 this_token.children = Some(vec![
                     self.parse_expression(
-                        token_vec[0..i].to_vec()
+                        token_vec[0..i].to_vec(),
+                        st.clone()
                     ),
                     self.parse_expression(
-                        token_vec[i+1..].to_vec()
+                        token_vec[i+1..].to_vec(),
+                        st.clone()
                     )
                 ]);
                 return ASTnode::Node(this_token);
@@ -109,10 +134,12 @@ impl Parser {
             let mut this_token = ASTtoken::new(token_vec[i].clone());
                 this_token.children = Some(vec![
                     self.parse_expression(
-                        token_vec[0..i].to_vec()
+                        token_vec[0..i].to_vec(),
+                        st.clone()
                     ),
                     self.parse_expression(
-                        token_vec[i+1..].to_vec()
+                        token_vec[i+1..].to_vec(),
+                        st.clone()
                     )
                 ]);
                 return ASTnode::Node(this_token);
@@ -173,7 +200,7 @@ impl Parser {
     }
 
 
-    fn parse_if(&mut self, mut token_vec: TokenVec) -> (ASTnode, TokenVec) {
+    fn parse_if(&mut self, mut token_vec: TokenVec, mut st: SymbolTracker) -> (ASTnode, TokenVec, SymbolTracker) {
         let mut cur_token = ASTtoken::new(token_vec.get_next());
         let mut c: Vec<ASTnode> = vec![];
         let mut expr_0: Vec<Token> = vec![];
@@ -198,8 +225,8 @@ impl Parser {
         let cmp_node = ASTnode::Node(ASTtoken{
             token: cmp_token,
             children: Some(vec![
-                self.parse_expression(expr_0),
-                self.parse_expression(expr_1),
+                self.parse_expression(expr_0, st.clone()),
+                self.parse_expression(expr_1, st.clone()),
             ])
         });
         c.push(cmp_node);
@@ -226,12 +253,14 @@ impl Parser {
         }
         token_vec.next(); // REMOVE RBrace
         token_vec.next(); // REMOVE EOL
-        c.push(self.parse_statements(statements));
+        let statement_node: ASTnode;
+        (statement_node, st) = self.parse_statements(statements, st);
+        c.push(statement_node);
         cur_token.children = Some(c);
-        return (ASTnode::Node(cur_token), token_vec);
+        return (ASTnode::Node(cur_token), token_vec, st);
     }
     
-    fn parse_print(&mut self, mut token_vec: TokenVec) -> (ASTnode, TokenVec) {
+    fn parse_print(&mut self, mut token_vec: TokenVec, st: SymbolTracker) -> (ASTnode, TokenVec, SymbolTracker) {
         let mut cur_token = ASTtoken::new(token_vec.get_next());
         token_vec.next(); // REMOVE LParen
         let mut expr: Vec<Token> = vec![];
@@ -245,11 +274,11 @@ impl Parser {
         }
         token_vec.next(); // REMOVE RParen
         token_vec.next(); // REMOVE EOL
-        cur_token.children = Some(vec![self.parse_expression(expr)]);
-        return (ASTnode::Node(cur_token), token_vec);
+        cur_token.children = Some(vec![self.parse_expression(expr, st.clone())]);
+        return (ASTnode::Node(cur_token), token_vec, st);
     }
 
-    fn parse_loop(&mut self, mut token_vec: TokenVec) -> (ASTnode, TokenVec) {
+    fn parse_loop(&mut self, mut token_vec: TokenVec, mut st: SymbolTracker) -> (ASTnode, TokenVec, SymbolTracker) {
         let mut cur_token = ASTtoken::new(token_vec.get_next());
         let mut c: Vec<ASTnode> = vec![];
         token_vec.next(); // REMOVE LBrace
@@ -273,9 +302,11 @@ impl Parser {
         }
         token_vec.next(); // REMOVE RBrace
         token_vec.next(); // REMOVE EOL
-        c.push(self.parse_statements(statements));
+        let statements_node: ASTnode;
+        (statements_node, st) = self.parse_statements(statements, st);
+        c.push(statements_node);
         cur_token.children = Some(c);
-        return (ASTnode::Node(cur_token), token_vec);
+        return (ASTnode::Node(cur_token), token_vec, st);
     }
 
 
@@ -299,11 +330,12 @@ impl ASTnode {
     }
 }
 
-// IDEA:
-pub struct StatementSeq {
-    seq: Vec<ASTnode>,
-    symbol_table: HashMap<String, i32>,
-}
+// // IDEA:
+// #[derive(Debug, Clone)]
+// pub struct StatementSeq {
+//     seq: Vec<ASTnode>,
+//     symbol_table: HashMap<String, i32>,
+// }
 
 #[derive(Debug, Clone)]
 pub struct ASTtoken {
@@ -363,3 +395,32 @@ impl TokenVec {
 //     If,
 // }
 
+#[derive(Debug, Clone)]
+struct SymbolTracker {
+    hash_map: HashMap<String, Option<i32>>
+}
+impl SymbolTracker {
+    fn new() -> SymbolTracker {
+        SymbolTracker { hash_map: HashMap::new() }
+    }
+    fn insert(&mut self, new_symb_token: Token) {
+        match new_symb_token.token_type {
+            TokenType::Emojis(s) => {
+                self.hash_map.insert(s, None);
+            },
+            _ => panic!("should only perform contains on token we know is emojis")
+        }
+    }
+    fn check(&self, token: Token) -> Result<String, String> {
+        match token.token_type {
+            TokenType::Emojis(s) => {
+                if self.hash_map.contains_key(&s) {
+                    return Ok("Ok".to_string())
+                } else {
+                    return Err(format!("\"{}\" is undefined at: {}", &s, token.location))
+                }
+            },
+            _ => panic!("should only perform contains on token we know is emojis")
+        }
+    }
+}
