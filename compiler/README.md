@@ -6,7 +6,7 @@
 ---
 
 ```
-<comment> ::= "🙈" <eol> | "🙈" <normal-text> <eol>
+<comment> ::= "🙈" <eol> | "🙈" <whatever> <eol>
 
 <statements> ::= <statements> <statement> | <statement>
 
@@ -96,8 +96,8 @@ break;
 return 0;
 }
 ```
----
 *wow no indendts! what are you, human?*
+---
 
 ## How to run:
 ```
