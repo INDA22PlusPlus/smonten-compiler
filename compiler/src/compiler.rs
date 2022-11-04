@@ -65,11 +65,32 @@ impl Compiler {
             TokenType::IfKeyword => {
                 self.compile_if(ast_token, st)
             },
-            TokenType::LoopKeyword => Err("not finsished".to_string()),
+            TokenType::LoopKeyword => {
+                self.compile_loop(ast_token, st)
+            },
             TokenType::BreakKeyword => self.compile_break(st),
             _ => return Err("unexpected tokentype in compile_stmt()".to_string())
         };
         return status
+    }
+
+    fn compile_loop(&mut self, cur_token: ASTtoken, mut st: SymbolTable) -> Result<SymbolTable, String> {
+        self.cw.write("while(1){\n");
+        let stmt_seq = match cur_token.children {
+            None => return Err("expected children".to_string()),
+            Some(v) => {
+                match v[0].clone() {
+                    ASTnode::StatementSeq(ssq) => ssq,
+                    _ => panic!()
+                }
+            }
+        };
+        match self.compile_stmts(stmt_seq, st.clone()) {
+            Err(e) => return Err(e),
+            Ok(_) => ()
+        }
+        self.cw.write("}\n");
+        Ok(st)
     }
 
     fn compile_if(&mut self, cur_token: ASTtoken, mut st: SymbolTable) -> Result<SymbolTable, String> {
@@ -149,7 +170,10 @@ impl Compiler {
             TokenType::Emojis(s) => s,
             _ => panic!()
         };
-        self.cw.write("int ");
+        // DECLARE NEW VARIABLE ONLY IF NOT ALREADY EXISTS
+        if !st.contains(&var) {
+            self.cw.write("int ");
+        }
         let var_in_c = st.assign(var);
         self.cw.write_String(var_in_c+" = ");
         match self.compile_expr(rc, st.clone()) {
@@ -306,6 +330,10 @@ impl SymbolTable {
             },
             Some(s) => s.to_string()
         }
+    }
+
+    fn contains(&self, k: &String) -> bool {
+        self.table.contains_key(k)
     }
 }
 
