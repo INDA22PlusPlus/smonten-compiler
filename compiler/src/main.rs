@@ -15,6 +15,9 @@ use tokenizer::Tokenizer;
 mod parser;
 use parser::Parser;
 
+mod compiler;
+use compiler::Compiler;
+
 fn main() {
 
     let mut tokenizer = Tokenizer::new();
@@ -31,7 +34,13 @@ fn main() {
         Err(e) => panic!("{}", e),
         Ok(ast_node) => ast_node,
     };
-    dbg!(ast);
+    // dbg!(&ast);
+
+    let mut compiler = Compiler::new();
+    match compiler.compile(ast) {
+        Err(e) => panic!("{}", e),
+        Ok(_) => (),
+    }
     
 
 }

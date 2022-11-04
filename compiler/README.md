@@ -77,4 +77,7 @@
 ## How to run:
 ```
 cargo run < input/fib.txt
+clang output/main.c -o output/main
+./output/main
+
 ```

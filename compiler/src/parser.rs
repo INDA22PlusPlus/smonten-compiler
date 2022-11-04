@@ -120,7 +120,7 @@ impl Parser {
                 let mut this_token = ASTtoken::new(token_vec[i].clone());
                 this_token.children = Some(vec![
                     self.parse_expression(
-                        token_vec[0..i].to_vec(),
+                        token_vec[..i].to_vec(),
                         st.clone()
                     ),
                     self.parse_expression(
@@ -264,11 +264,21 @@ impl Parser {
         let mut cur_token = ASTtoken::new(token_vec.get_next());
         token_vec.next(); // REMOVE LParen
         let mut expr: Vec<Token> = vec![];
+        let mut paren_depth = 0;
         loop {
             match token_vec.peek().token_type {
                 TokenType::RParen => {
-                    break;
+                    if paren_depth == 0 {
+                        break;
+                    } else {
+                        expr.push(token_vec.get_next());
+                        paren_depth -= 1;
+                    }
                 },
+                TokenType::LParen => {
+                    paren_depth += 1;
+                    expr.push(token_vec.get_next())
+                }
                 _ => expr.push(token_vec.get_next())
             }
         }
@@ -339,12 +349,50 @@ impl ASTnode {
 
 #[derive(Debug, Clone)]
 pub struct ASTtoken {
-    token: Token,
-    children: Option<Vec<ASTnode>>
+    pub token: Token,
+    pub children: Option<Vec<ASTnode>>
 }
 impl ASTtoken {
     fn new(token: Token) -> ASTtoken {
         ASTtoken { token: token, children: None }
+    }
+    pub fn get_single_child(&self) -> ASTtoken {
+        match self.children.clone() {
+            None => panic!("expected one child, found none"),
+            Some(v) => {
+                if v.len() > 1 {
+                    panic!("too many children");
+                } else {
+                    match v[0].clone() {
+                        ASTnode::Node(t) => t,
+                        _ => panic!()
+                    }
+                }
+
+            }
+        }
+    }
+    pub fn get_binary_children(&self) -> (ASTtoken, ASTtoken) {
+        match self.children.clone() {
+            None => panic!("expected two children, found none"),
+            Some(v) => {
+                if v.len() != 2 {
+                    panic!("not two children");
+                } else {
+                    let child_token_0 = match v[0].clone() {
+                        ASTnode::Node(t) => t,
+                        _ => panic!()
+                    };
+                    let child_token_1 = match v[1].clone() {
+                        ASTnode::Node(t) => t,
+                        _ => panic!()
+                    };
+                    return (child_token_0, child_token_1)
+
+                }
+
+            }
+        }
     }
 }
 
