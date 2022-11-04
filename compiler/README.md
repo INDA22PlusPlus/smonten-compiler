@@ -74,7 +74,7 @@
 ```
 
 ---
-## Compiles to C:
+## Transpiles to C
 ```
 #include <stdio.h>
 int main() {
